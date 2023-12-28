@@ -413,7 +413,8 @@ def train(train_loader, clip_model, model, criterion, optimizer, scaler, schedul
 
         if not args.use_embed:
             logging.info('=> encoding captions')  
-            texts, image = compute_embedding(clip_model, texts, image)
+            #texts, image = compute_embedding(clip_model, texts, image)
+            texts, image = np.load("lvis_text_features.npy")
 
         inputs = [feature, texts, image]
 
