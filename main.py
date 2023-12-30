@@ -3,6 +3,9 @@ import math
 import time
 import wandb
 
+import os
+os.chdir("/content/Uni3D")
+
 import torch.cuda.amp as amp
 import torch.nn.parallel
 import torch.optim
@@ -25,7 +28,7 @@ from utils.optim import create_optimizer, get_all_parameters, get_loss_scale_for
 
 from datetime import datetime
 
-import open_clip
+#import open_clip
 import models.uni3d as models
 
 best_acc1 = 0
@@ -127,10 +130,11 @@ def main(args):
 
     random_seed(args.seed, 0)
 
-    logging.info("=> create clip teacher...")
+    #logging.info("=> create clip teacher...")
     # It is recommended to download clip model in advance and then load from the local
-    clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
-    clip_model.to(device)
+    #clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
+    #clip_model.to(device)
+    clip_model = None
 
     # create model
     logging.info("=> creating model: {}".format(args.model))
@@ -412,9 +416,9 @@ def train(train_loader, clip_model, model, criterion, optimizer, scaler, schedul
         feature = torch.cat((pc, rgb), dim=-1)
 
         if not args.use_embed:
-            logging.info('=> encoding captions')  
-            #texts, image = compute_embedding(clip_model, texts, image)
-            texts, image = np.load("lvis_text_features.npy")
+            #logging.info('=> encoding captions')  
+            texts, image = compute_embedding(clip_model, texts, image)
+
 
         inputs = [feature, texts, image]
 
@@ -527,7 +531,9 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             texts = tokenizer(texts).to(device=args.device, non_blocking=True)
             if len(texts.shape) < 2:
                 texts = texts[None, ...]
-            class_embeddings = clip_model.encode_text(texts)
+            #CHANGE
+            #class_embeddings = clip_model.encode_text(texts)
+            class_embeddings = np.load("lvis_text_features.npy")
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
             class_embeddings = class_embeddings.mean(dim=0)
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
@@ -601,7 +607,7 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
     logging.info('0-shot * Acc@1 {top1.avg:.3f} Acc@3 {top3.avg:.3f} Acc@5 {top5.avg:.3f}')
     return {'acc1': top1.avg, 'acc3': top3.avg, 'acc5': top5.avg}
 
-def test_zeroshot_3d(args, model, clip_model):
+def test_zeroshot_3d(args, model, clip_model=None):#CHANGE
     checkpoint = torch.load(args.ckpt_path, map_location='cpu')
     logging.info('loaded checkpoint {}'.format(args.ckpt_path))
     sd = checkpoint['module']
