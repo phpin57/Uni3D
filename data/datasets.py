@@ -165,7 +165,9 @@ class ModelNet40_openshape(data.Dataset):
         split = config.subset
         self.subset = config.subset
         self.openshape_setting = config.openshape_setting
-        self.data_path = config.DATA_PATH
+        #self.data_path = config.DATA_PATH
+        #CHANGE
+        self.data_path = "/content/Uni3D/data/test_dataset/modelnet40"
         self.catfile = os.path.join(self.data_path, 'modelnet40_shape_names.txt')
         self.cat = [line.rstrip() for line in open(self.catfile)]
         self.classes = dict(zip(self.cat, range(len(self.cat))))
@@ -216,7 +218,9 @@ class ScanObjNN_openshape(data.Dataset):
         self.uniform = True
         self.generate_from_raw_data = False
         self.openshape_setting = config.openshape_setting
-        self.data_path = config.DATA_PATH
+        #self.data_path = config.DATA_PATH
+        #CHANGE
+        self.data_path = "/content/Uni3D/data/test_dataset/scanobjectnn"
 
         self.categories = ["bag", "bin", "box", "cabinet", "chair", "desk", "display", "door", "shelf", "table", "bed", "pillow", "sink", "sofa", "toilet"]
 
@@ -480,7 +484,9 @@ class Objaverse_lvis_openshape(data.Dataset):
             self.templates = json.load(f)[config.pretrain_dataset_prompt]
 
 
-        self.data_list_file = config.PC_PATH
+        #self.data_list_file = config.PC_PATH
+        #CHANGE
+        self.data_list_file = "/content/Uni3D/data/test_dataset/objaverse_lvis/lvis_testset.txt"
         self.pc_root = config.PC_PATH_ROOT
 
         self.sample_points_num = self.npoints
