@@ -524,21 +524,24 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
         labels = json.load(f)[validate_dataset_name]
 
     with torch.no_grad():
-        logging.info('=> encoding captions')               
+        logging.info('=> encoding captions')   
+        """     
+        CHANGE       
         text_features = []
         for l in labels:
             texts = [t.format(l) for t in templates]
             texts = tokenizer(texts).to(device=args.device, non_blocking=True)
             if len(texts.shape) < 2:
                 texts = texts[None, ...]
-            #CHANGE
-            #class_embeddings = clip_model.encode_text(texts)
+            class_embeddings = clip_model.encode_text(texts)
             class_embeddings = np.load("lvis_text_features.npy")
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
             class_embeddings = class_embeddings.mean(dim=0)
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
             text_features.append(class_embeddings)
         text_features = torch.stack(text_features, dim=0)
+        """
+        text_features = torch.tensor(np.load("lvis_text_features.npy"))
 
         end = time.time()
         per_class_stats = collections.defaultdict(int)
