@@ -4,7 +4,7 @@ import shutil
 
 path_json='/content/Uni3D/test_dataids.json'
 source_folder='/content/Uni3D/uni3d_data/objaverse_lvis'
-destination_base_folder = "/content/Uni3D/data/test_dataset/objaverse_lvis"
+destination_base_folder = "/content/Uni3D/data/test_datasets/objaverse_lvis"
 
 
 with open(path_json, 'r') as json_file:
