@@ -541,7 +541,8 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             text_features.append(class_embeddings)
         text_features = torch.stack(text_features, dim=0)
         """
-        text_features = torch.tensor(np.load("lvis_text_features.npy"))
+        #CHANGE
+        text_features = torch.tensor(np.load("lvis_text_features.npy")).to(device=args.device, non_blocking=True)
 
         end = time.time()
         per_class_stats = collections.defaultdict(int)
