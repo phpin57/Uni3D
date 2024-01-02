@@ -31,7 +31,7 @@ torchrun --nproc-per-node=1 main.py \
     --clip-model $clip_model \
     --pretrained $pretrained \
     --pc-model $pc_model \
-    --pc-feat-dim 1408 \
+    --pc-feat-dim 768 \
     --embed-dim 1024 \
     --validate_dataset_name modelnet40_openshape \
     --validate_dataset_name_lvis objaverse_lvis_openshape \
