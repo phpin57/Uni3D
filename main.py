@@ -13,6 +13,7 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import collections
+import open3d as o3d
 
 from data.datasets import *
 # from data.datasets import customized_collate_fn
@@ -32,6 +33,19 @@ from datetime import datetime
 import models.uni3d as models
 
 best_acc1 = 0
+
+def hidden_point_removal(pc, rgb):
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pc)
+    pcd.colors = o3d.utility.Vector3dVector(rgb)
+
+    diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
+    camera = [0, 0, diameter]
+    radius = diameter * 100
+
+    _, pt_map = pcd.hidden_point_removal(camera, radius)
+    return pt_map
+
 
 def random_seed(seed=42, rank=0):
     torch.manual_seed(seed + rank)
