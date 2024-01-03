@@ -34,18 +34,72 @@ import models.uni3d as models
 
 best_acc1 = 0
 
-def hidden_point_removal(pc, rgb):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(pc)
-    pcd.colors = o3d.utility.Vector3dVector(rgb)
+def hidden_point_removal_batch(pc_batch, rgb_batch):
+    pt_maps = []
 
-    diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
-    camera = [0, 0, diameter]
-    radius = diameter * 100
+    for i in range(pc_batch.shape[0]):
+        pc = pc_batch[i].numpy()
+        rgb = rgb_batch[i].numpy()
 
-    _, pt_map = pcd.hidden_point_removal(camera, radius)
-    return pt_map
+        # Normalize the point cloud
+        pc_mean = np.mean(pc, axis=0)
+        pc -= pc_mean
 
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+
+        diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
+        camera = [0, 0, diameter]
+        radius = diameter * 100
+
+        #to handle a specific error that occured once with a flat simplex
+        try:
+            _, pt_map = pcd.hidden_point_removal(camera, radius)
+            pt_maps.append(torch.tensor(pt_map))
+        except Exception as e:
+            print(f"Error with batch {i}: {e}")
+            # I continue if an error occurs
+
+    return torch.cat(pt_maps, dim=0)
+
+
+def hidden_point_removal_multi_view(pc_batch, rgb_batch, cameras):
+    pt_maps_list = []
+
+    for i in range(pc_batch.shape[0]):
+        pc = pc_batch[i].numpy()
+        rgb = rgb_batch[i].numpy()
+
+        # Check if point cloud is empty or nearly empty
+        if len(pc) < 3:
+            print(f"Skipping batch {i} due to insufficient points.")
+            continue
+
+        # Normalize the point cloud
+        pc_mean = np.mean(pc, axis=0)
+        pc -= pc_mean
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+
+        pt_maps_single_view = []
+        for camera in cameras:
+            try:
+                _, pt_map = pcd.hidden_point_removal(camera, camera[2] * 100)  # Assuming camera[2] is the diameter
+                pt_maps_single_view.append(torch.tensor(pt_map))
+            except Exception as e:
+                print(f"Error processing batch {i} with camera {camera}: {e}")
+
+        # Combine the indices from all views
+        if pt_maps_single_view:
+            pt_maps_list.append(torch.stack(pt_maps_single_view, dim=0))
+
+    if pt_maps_list:
+        return torch.cat(pt_maps_list, dim=0)
+    else:
+        return None  # Return None if no valid point clouds are processed
 
 def random_seed(seed=42, rank=0):
     torch.manual_seed(seed + rank)
