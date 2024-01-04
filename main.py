@@ -2,6 +2,7 @@ from collections import OrderedDict
 import math
 import time
 import wandb
+import copy
 
 import os
 os.chdir("/content/Uni3D")
@@ -41,7 +42,6 @@ def hidden_point_removal_batch(pc_batch, rgb_batch):
         pc = pc_batch[i].numpy()
         rgb = rgb_batch[i].numpy()
 
-        # Normalize the point cloud
         pc_mean = np.mean(pc, axis=0)
         pc -= pc_mean
 
@@ -64,38 +64,45 @@ def hidden_point_removal_batch(pc_batch, rgb_batch):
     return torch.cat(pt_maps, dim=0)
 
 
-def hidden_point_removal_multi_view(pc_batch, rgb_batch, cameras):
+def hidden_point_removal_multi_view(pc_batch, rgb_batch):
     pt_maps_list = []
+    
 
     for i in range(pc_batch.shape[0]):
         pc = pc_batch[i].numpy()
         rgb = rgb_batch[i].numpy()
-
-        # Check if point cloud is empty or nearly empty
-        if len(pc) < 3:
-            print(f"Skipping batch {i} due to insufficient points.")
-            continue
-
-        # Normalize the point cloud
+        
         pc_mean = np.mean(pc, axis=0)
         pc -= pc_mean
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pc)
         pcd.colors = o3d.utility.Vector3dVector(rgb)
+        
+        diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
+        camera = [0, 0, diameter]
+        radius = diameter * 100
 
-        pt_maps_single_view = []
-        for camera in cameras:
-            try:
-                _, pt_map = pcd.hidden_point_removal(camera, camera[2] * 100)  # Assuming camera[2] is the diameter
-                pt_maps_single_view.append(torch.tensor(pt_map))
-            except Exception as e:
-                print(f"Error processing batch {i} with camera {camera}: {e}")
+        def deg2rad(deg):
+            return deg * np.pi/180
+        
+        # rotating the point cloud about the X-axis by 90 degrees.
+        x_theta = deg2rad(90)
+        y_theta = deg2rad(0)
+        z_theta = deg2rad(0)
+        tmp_pcd_r = copy.deepcopy(pcd)
+        R = tmp_pcd_r.get_rotation_matrix_from_axis_angle([x_theta, y_theta, z_theta])
+        tmp_pcd_r.rotate(R, center=(0, 0, 0))
 
-        # Combine the indices from all views
-        if pt_maps_single_view:
-            pt_maps_list.append(torch.stack(pt_maps_single_view, dim=0))
-
+        #to handle a specific error that occured once with a flat simplex
+        try:
+            _, pt_map1 = pcd.hidden_point_removal(camera, radius)
+            _, pt_map2 = tmp_pcd_r.hidden_point_removal(camera, radius)
+            pt_map = np.unique(np.concatenate((pt_map1, pt_map2), axis=0), axis=0)
+            pt_maps.append(torch.tensor(pt_map))
+        except Exception as e:
+            print(f"Error with batch {i}: {e}")
+            # I continue if an error occurs
     if pt_maps_list:
         return torch.cat(pt_maps_list, dim=0)
     else:
