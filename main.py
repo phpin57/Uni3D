@@ -35,8 +35,10 @@ import models.uni3d as models
 
 best_acc1 = 0
 
+
 def hidden_point_removal_batch(pc_batch, rgb_batch):
-    pt_maps = []
+    new_pc_batch = []
+    new_col_batch = []
 
     for i in range(pc_batch.shape[0]):
         pc = pc_batch[i].numpy()
@@ -55,37 +57,47 @@ def hidden_point_removal_batch(pc_batch, rgb_batch):
 
         #to handle a specific error that occured once with a flat simplex
         try:
-            _, pt_map = pcd.hidden_point_removal(camera, radius)
-            pt_maps.append(torch.tensor(pt_map))
+          _, pt_map = pcd.hidden_point_removal(camera, radius)
+          pcd_visible = pcd.select_by_index(pt_map)
+          pc_b=np.asarray(pcd_visible.points)
+          pc_c=np.asarray(pcd_visible.colors)
+          rows_to_add=10000-pc_b.shape[0]
+          zeros_pc_b = np.zeros((rows_to_add, 3))  # Assuming pc_b has 3 columns
+          zeros_pc_c = np.zeros((rows_to_add, 3))  # Assuming pc_c has 3 columns
+
+          # Concatenate the original arrays and the zeros arrays along the first axis (rows)
+          resulting_pc_b = np.concatenate([pc_b, zeros_pc_b], axis=0)
+          resulting_pc_c = np.concatenate([pc_c, zeros_pc_c], axis=0)
+          new_pc_batch.append(resulting_pc_b)
+          new_col_batch.append(resulting_pc_c)
         except Exception as e:
             print(f"Error with batch {i}: {e}")
             # I continue if an error occurs
+    return torch.tensor(np.array(new_pc_batch)),torch.tensor(np.array(new_pc_batch))
 
-    return torch.cat(pt_maps, dim=0)
 
 
 def hidden_point_removal_multi_view(pc_batch, rgb_batch):
     pt_maps_list = []
-    
 
     for i in range(pc_batch.shape[0]):
         pc = pc_batch[i].numpy()
         rgb = rgb_batch[i].numpy()
-        
+
         pc_mean = np.mean(pc, axis=0)
         pc -= pc_mean
 
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pc)
         pcd.colors = o3d.utility.Vector3dVector(rgb)
-        
+
         diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
         camera = [0, 0, diameter]
         radius = diameter * 100
 
         def deg2rad(deg):
             return deg * np.pi/180
-        
+
         # rotating the point cloud about the X-axis by 90 degrees.
         x_theta = deg2rad(90)
         y_theta = deg2rad(0)
@@ -99,7 +111,7 @@ def hidden_point_removal_multi_view(pc_batch, rgb_batch):
             _, pt_map1 = pcd.hidden_point_removal(camera, radius)
             _, pt_map2 = tmp_pcd_r.hidden_point_removal(camera, radius)
             pt_map = np.unique(np.concatenate((pt_map1, pt_map2), axis=0), axis=0)
-            pt_maps.append(torch.tensor(pt_map))
+            pt_maps_list.append(torch.tensor(pt_map))
         except Exception as e:
             print(f"Error with batch {i}: {e}")
             # I continue if an error occurs
