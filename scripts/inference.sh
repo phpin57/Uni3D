@@ -19,7 +19,7 @@ else
 fi
 
 
-ckpt_path="/path/to/checkpoints/model.pt"
+ckpt_path="path/to/checkpoints/model.pt"
 
 torchrun --nproc-per-node=1 main.py \
     --model $model \

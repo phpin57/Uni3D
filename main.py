@@ -127,10 +127,10 @@ def main(args):
 
     random_seed(args.seed, 0)
 
-    logging.info("=> create clip teacher...")
+    #logging.info("=> create clip teacher...")
     # It is recommended to download clip model in advance and then load from the local
-    clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
-    clip_model.to(device)
+    #clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
+    #clip_model.to(device)
 
     # create model
     logging.info("=> creating model: {}".format(args.model))
