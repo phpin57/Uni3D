@@ -2,6 +2,10 @@ from collections import OrderedDict
 import math
 import time
 import wandb
+import copy
+
+import os
+os.chdir("/content/Uni3D")
 
 import torch.cuda.amp as amp
 import torch.nn.parallel
@@ -10,6 +14,7 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import collections
+import open3d as o3d
 
 from data.datasets import *
 # from data.datasets import customized_collate_fn
@@ -25,10 +30,95 @@ from utils.optim import create_optimizer, get_all_parameters, get_loss_scale_for
 
 from datetime import datetime
 
-import open_clip
+#import open_clip
 import models.uni3d as models
 
 best_acc1 = 0
+
+
+def hidden_point_removal_batch(pc_batch, rgb_batch):
+    new_pc_batch = []
+    new_col_batch = []
+
+    for i in range(pc_batch.shape[0]):
+        pc = pc_batch[i].numpy()
+        rgb = rgb_batch[i].numpy()
+
+        pc_mean = np.mean(pc, axis=0)
+        pc -= pc_mean
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+
+        diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
+        camera = [0, 0, diameter]
+        radius = diameter * 100
+
+        #to handle a specific error that occured once with a flat simplex
+        try:
+          _, pt_map = pcd.hidden_point_removal(camera, radius)
+          pcd_visible = pcd.select_by_index(pt_map)
+          pc_b=np.asarray(pcd_visible.points)
+          pc_c=np.asarray(pcd_visible.colors)
+          rows_to_add=10000-pc_b.shape[0]
+          zeros_pc_b = np.zeros((rows_to_add, 3))  # Assuming pc_b has 3 columns
+          zeros_pc_c = np.zeros((rows_to_add, 3))  # Assuming pc_c has 3 columns
+
+          # Concatenate the original arrays and the zeros arrays along the first axis (rows)
+          resulting_pc_b = np.concatenate([pc_b, zeros_pc_b], axis=0)
+          resulting_pc_c = np.concatenate([pc_c, zeros_pc_c], axis=0)
+          new_pc_batch.append(resulting_pc_b)
+          new_col_batch.append(resulting_pc_c)
+        except Exception as e:
+            print(f"Error with batch {i}: {e}")
+            # I continue if an error occurs
+    return torch.tensor(np.array(new_pc_batch)),torch.tensor(np.array(new_pc_batch))
+
+
+
+def hidden_point_removal_multi_view(pc_batch, rgb_batch):
+    pt_maps_list = []
+
+    for i in range(pc_batch.shape[0]):
+        pc = pc_batch[i].numpy()
+        rgb = rgb_batch[i].numpy()
+
+        pc_mean = np.mean(pc, axis=0)
+        pc -= pc_mean
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pc)
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+
+        diameter = np.linalg.norm(np.asarray(pcd.get_min_bound()) - np.asarray(pcd.get_max_bound()))
+        camera = [0, 0, diameter]
+        radius = diameter * 100
+
+        def deg2rad(deg):
+            return deg * np.pi/180
+
+        # rotating the point cloud about the X-axis by 90 degrees.
+        x_theta = deg2rad(90)
+        y_theta = deg2rad(0)
+        z_theta = deg2rad(0)
+        tmp_pcd_r = copy.deepcopy(pcd)
+        R = tmp_pcd_r.get_rotation_matrix_from_axis_angle([x_theta, y_theta, z_theta])
+        tmp_pcd_r.rotate(R, center=(0, 0, 0))
+
+        #to handle a specific error that occured once with a flat simplex
+        try:
+            _, pt_map1 = pcd.hidden_point_removal(camera, radius)
+            _, pt_map2 = tmp_pcd_r.hidden_point_removal(camera, radius)
+            pt_map = np.unique(np.concatenate((pt_map1, pt_map2), axis=0), axis=0)
+            pt_maps_list.append(torch.tensor(pt_map))
+        except Exception as e:
+            print(f"Error with batch {i}: {e}")
+            # I continue if an error occurs
+    if pt_maps_list:
+        return torch.cat(pt_maps_list, dim=0)
+    else:
+        return None  # Return None if no valid point clouds are processed
 
 def random_seed(seed=42, rank=0):
     torch.manual_seed(seed + rank)
@@ -128,9 +218,10 @@ def main(args):
     random_seed(args.seed, 0)
 
     #logging.info("=> create clip teacher...")
+    #logging.info("=> create clip teacher...")
     # It is recommended to download clip model in advance and then load from the local
-    #clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
-    #clip_model.to(device)
+    clip_model, _, _ = open_clip.create_model_and_transforms(model_name=args.clip_model, pretrained=args.pretrained) 
+    clip_model.to(device)
 
     # create model
     logging.info("=> creating model: {}".format(args.model))
@@ -412,9 +503,9 @@ def train(train_loader, clip_model, model, criterion, optimizer, scaler, schedul
         feature = torch.cat((pc, rgb), dim=-1)
 
         if not args.use_embed:
-            logging.info('=> encoding captions')  
-            #texts, image = compute_embedding(clip_model, texts, image)
-            texts, image = np.load("lvis_text_features.npy")
+            #logging.info('=> encoding captions')  
+            texts, image = compute_embedding(clip_model, texts, image)
+
 
         inputs = [feature, texts, image]
 
@@ -520,7 +611,9 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
         labels = json.load(f)[validate_dataset_name]
 
     with torch.no_grad():
-        logging.info('=> encoding captions')               
+        logging.info('=> encoding captions')   
+        """     
+        CHANGE       
         text_features = []
         for l in labels:
             texts = [t.format(l) for t in templates]
@@ -528,11 +621,15 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
             if len(texts.shape) < 2:
                 texts = texts[None, ...]
             class_embeddings = clip_model.encode_text(texts)
+            class_embeddings = np.load("lvis_text_features.npy")
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
             class_embeddings = class_embeddings.mean(dim=0)
             class_embeddings = class_embeddings / class_embeddings.norm(dim=-1, keepdim=True)
             text_features.append(class_embeddings)
         text_features = torch.stack(text_features, dim=0)
+        """
+        #CHANGE
+        text_features = torch.tensor(np.load("lvis_text_features.npy")).to(device=args.device, non_blocking=True)
 
         end = time.time()
         per_class_stats = collections.defaultdict(int)
@@ -601,7 +698,7 @@ def test_zeroshot_3d_core(test_loader, validate_dataset_name, model, clip_model,
     logging.info('0-shot * Acc@1 {top1.avg:.3f} Acc@3 {top3.avg:.3f} Acc@5 {top5.avg:.3f}')
     return {'acc1': top1.avg, 'acc3': top3.avg, 'acc5': top5.avg}
 
-def test_zeroshot_3d(args, model, clip_model):
+def test_zeroshot_3d(args, model, clip_model=None):#CHANGE
     checkpoint = torch.load(args.ckpt_path, map_location='cpu')
     logging.info('loaded checkpoint {}'.format(args.ckpt_path))
     sd = checkpoint['module']
